@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # College Prep Platform
 
 A comprehensive college preparation platform with student management, course delivery, and administrative tools.
@@ -85,3 +86,6 @@ npm run dev
 ## Deployment
 
 Production deployment uses Docker containers with proper environment configurations for scalability and maintainability.
+=======
+# Primis2
+>>>>>>> a4d5917ec1ce523d0042a047b78b271a07990c4b
