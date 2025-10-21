@@ -4,7 +4,7 @@ const withNextIntl = require('next-intl/plugin')(
 );
 
 const nextConfig = {
-  output: 'standalone',
+  // Remove 'output: standalone' for Vercel - not needed as Vercel handles this
   reactStrictMode: true,
   swcMinify: true,
   
@@ -15,9 +15,19 @@ const nextConfig = {
   
   // Optimize images
   images: {
-    domains: ['localhost'],
+    domains: ['localhost', 'primis-full-stack-1.onrender.com', 'res.cloudinary.com'],
     formats: ['image/avif', 'image/webp'],
     minimumCacheTTL: 60,
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: '**.onrender.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'res.cloudinary.com',
+      },
+    ],
   },
   
   // Optimize fonts
