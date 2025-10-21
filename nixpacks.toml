@@ -1,0 +1,17 @@
+[phases.setup]
+nixPkgs = ["python311", "postgresql"]
+
+[phases.install]
+cmds = [
+  "cd backend",
+  "pip install -r requirements.txt"
+]
+
+[phases.build]
+cmds = [
+  "cd backend",
+  "mkdir -p uploads qr_codes"
+]
+
+[start]
+cmd = "cd backend && gunicorn app.main:app --workers 4 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT"
