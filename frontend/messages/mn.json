@@ -31,7 +31,10 @@
     "showLess": "Бага харуулах",
     "download": "Татаж авах",
     "online": "Онлайн",
-    "accessDenied": "Нэвтрэх эрх хүрэлцэхгүй байна"
+    "accessDenied": "Нэвтрэх эрх хүрэлцэхгүй байна",
+    "and": "ба",
+    "student": "Оюутан",
+    "date": "Огноо"
   },
   "home": {
     "hero": {
@@ -124,7 +127,8 @@
     "profile": "Профайл",
     "logout": "Гарах",
     "login": "Нэвтрэх",
-    "register": "Бүртгүүлэх"
+    "register": "Бүртгүүлэх",
+    "backToHome": "Эхлэл рүү буцах"
   },
   "auth": {
     "login": "Нэвтрэх",
@@ -151,7 +155,13 @@
     "loginSuccess": "Амжилттай нэвтэрлээ!",
     "loginError": "Нэвтрэлт амжилтгүй. Өгөгдлөө шалгана уу.",
     "registerSuccess": "Амжилттай бүртгэгдлээ! Нэвтэрнэ үү.",
-    "registerError": "Бүртгэл амжилтгүй. Дахин оролдоно уу."
+    "registerError": "Бүртгэл амжилтгүй. Дахин оролдоно уу.",
+    "studentDescription": "Би энд оюутан",
+    "teacherDescription": "Би энд багш",
+    "agreeTo": "Би зөвшөөрөлтэй",
+    "termsOfService": "Үйлчилгээний нөхцөл",
+    "privacyPolicy": "Нууцлалын бодлого",
+    "signInInstead": "Оронд нь нэвтрэх"
   },
   "dashboard": {
     "title": "Хянах самбар",
