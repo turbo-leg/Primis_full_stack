@@ -31,7 +31,10 @@
     "showLess": "Show less",
     "download": "Download",
     "online": "Online",
-    "accessDenied": "Access Denied"
+    "accessDenied": "Access Denied",
+    "and": "and",
+    "student": "Student",
+    "date": "Date"
   },
   "home": {
     "hero": {
@@ -124,7 +127,8 @@
     "profile": "Profile",
     "logout": "Logout",
     "login": "Login",
-    "register": "Register"
+    "register": "Register",
+    "backToHome": "Back to home"
   },
   "auth": {
     "login": "Login",
@@ -151,7 +155,13 @@
     "loginSuccess": "Login successful!",
     "loginError": "Login failed. Please check your credentials.",
     "registerSuccess": "Registration successful! Please login.",
-    "registerError": "Registration failed. Please try again."
+    "registerError": "Registration failed. Please try again.",
+    "studentDescription": "I am a student here",
+    "teacherDescription": "I am a teacher here",
+    "agreeTo": "I agree to the",
+    "termsOfService": "Terms of Service",
+    "privacyPolicy": "Privacy Policy",
+    "signInInstead": "Sign in instead"
   },
   "dashboard": {
     "title": "Dashboard",
