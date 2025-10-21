@@ -26,5 +26,6 @@ RUN mkdir -p uploads qr_codes
 # Expose port (Railway uses PORT env variable)
 EXPOSE 8000
 
-# Run with Gunicorn for production
-CMD ["sh", "-c", "gunicorn app.main:app --workers 4 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:${PORT:-8000}"]
+# Run with single worker for free tier (512MB RAM limit)
+# For production with more RAM, increase workers: --workers 2-4
+CMD ["sh", "-c", "gunicorn app.main:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:${PORT:-8000} --timeout 120"]

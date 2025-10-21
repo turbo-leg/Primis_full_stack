@@ -1,0 +1,39 @@
+services:
+  # Backend API
+  - type: web
+    name: college-prep-backend
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: "cd backend && pip install -r requirements.txt"
+    startCommand: "cd backend && gunicorn app.main:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120 --preload"
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: DEBUG
+        value: False
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: 30
+      - key: SMTP_SERVER
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: 587
+      - key: MAIL_FROM_NAME
+        value: College Prep Platform
+      # Add these manually in Render dashboard:
+      # - DATABASE_URL (from Render PostgreSQL)
+      # - REDIS_URL (from Render Redis or Upstash)
+      # - SMTP_USER
+      # - SMTP_PASSWORD
+      # - PASSWORD_RESET_URL
+
+databases:
+  - name: college-prep-db
+    plan: free
+    databaseName: college_prep
+    user: college_prep_user
