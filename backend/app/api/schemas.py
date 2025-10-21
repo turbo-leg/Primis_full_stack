@@ -116,3 +116,9 @@ class ChangePassword(BaseModel):
     current_password: str
     new_password: str
     confirm_password: str
+
+
+class Message(BaseModel):
+    """Generic message response"""
+    message: str
+    success: bool = True
