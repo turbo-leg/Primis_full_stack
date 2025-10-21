@@ -170,22 +170,17 @@ async def get_my_enrollments(
 ):
     """Get enrollments with course details for current student"""
     try:
-        print(f"DEBUG: my-enrollments called, current_user: {current_user}")
         student_id = current_user["user"].student_id
-        print(f"DEBUG: student_id: {student_id}")
         
         enrollments = db.query(Enrollment).filter(
             Enrollment.student_id == student_id,
             Enrollment.status == "active"
         ).all()
-        print(f"DEBUG: Found {len(enrollments)} enrollments")
         
         result = []
         for enrollment in enrollments:
-            print(f"DEBUG: Processing enrollment {enrollment.enrollment_id}")
             course = db.query(Course).filter(Course.course_id == enrollment.course_id).first()
             if course:
-                print(f"DEBUG: Found course {course.course_id}")
                 result.append({
                     "enrollment_id": enrollment.enrollment_id,
                     "course": {
@@ -207,13 +202,11 @@ async def get_my_enrollments(
                     "status": enrollment.status
                 })
         
-        print(f"DEBUG: Returning {len(result)} results")
-        print(f"DEBUG: Result: {result}")
         return result
     except Exception as e:
-        print(f"ERROR in my-enrollments: {str(e)}")
-        import traceback
-        print(f"TRACEBACK: {traceback.format_exc()}")
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error in my-enrollments: {str(e)}", exc_info=True)
         raise
 
 
@@ -381,6 +374,27 @@ async def enroll_in_course(
     db.add(enrollment)
     db.commit()
     db.refresh(enrollment)
+    
+    # Send enrollment confirmation notification to student
+    try:
+        from app.services.notification_service import NotificationService
+        from app.models.notification_models import NotificationType, NotificationPriority
+        
+        notification_service = NotificationService(db)
+        notification_service.create_notification(
+            user_id=student_id,
+            user_type="student",
+            notification_type=NotificationType.ENROLLMENT_APPROVED,
+            title=f"Enrolled in {course.title}",
+            message=f"You have successfully enrolled in {course.title}. Payment is due by {course.start_time.strftime('%Y-%m-%d') if course.start_time else 'TBD'}.",
+            priority=NotificationPriority.HIGH,
+            action_url=f"/dashboard/student/courses/{course_id}",
+            action_text="View Course",
+            related_course_id=course_id
+        )
+    except Exception as e:
+        print(f"Failed to send enrollment notification: {e}")
+        # Don't fail the enrollment if notification fails
     
     return {"message": "Successfully enrolled in course", "enrollment_id": enrollment.enrollment_id}
 

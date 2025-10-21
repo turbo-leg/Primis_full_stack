@@ -183,6 +183,28 @@ async def mark_attendance(
     db.commit()
     db.refresh(attendance)
     
+    # Send notification to student about attendance marking (if absent)
+    if attendance_data.status == "absent":
+        try:
+            from app.services.notification_service import NotificationService
+            from app.models.notification_models import NotificationType, NotificationPriority
+            
+            notification_service = NotificationService(db)
+            notification_service.create_notification(
+                user_id=attendance_data.student_id,
+                user_type="student",
+                notification_type=NotificationType.ATTENDANCE_MARKED,
+                title=f"Attendance Marked: Absent",
+                message=f"You were marked absent in {course.title} on {attendance_data.attendance_date.strftime('%Y-%m-%d')}",
+                priority=NotificationPriority.HIGH,
+                action_url=f"/dashboard/student/attendance",
+                action_text="View Attendance",
+                related_course_id=attendance_data.course_id
+            )
+        except Exception as e:
+            print(f"Failed to send attendance notification: {e}")
+            # Don't fail the attendance marking if notification fails
+    
     return attendance
 
 

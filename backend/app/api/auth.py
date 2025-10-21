@@ -10,7 +10,7 @@ from app.core.config import settings
 from app.models.models import Student, Teacher, Admin, Parent
 from app.api.schemas import (
     UserLogin, Token, StudentCreate, TeacherCreate, AdminCreate, ParentCreate,
-    StudentResponse, TeacherResponse, AdminResponse, ParentResponse
+    StudentResponse, TeacherResponse, AdminResponse, ParentResponse, ChangePassword
 )
 from app.utils.qr_generator import generate_qr_code
 
@@ -58,6 +58,15 @@ def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token payload"
+        )
+    
+    # Convert user_id to integer (it's stored as string in JWT)
+    try:
+        user_id = int(user_id)
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid user ID in token"
         )
     
     # Get user from database based on type
@@ -286,3 +295,49 @@ async def get_current_user_info(current_user=Depends(get_current_user)):
 async def logout():
     """Logout endpoint (client should discard token)"""
     return {"message": "Successfully logged out"}
+
+
+@router.post("/change-password")
+async def change_password(
+    password_data: ChangePassword,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Change user password"""
+    user = current_user["user"]
+    user_type = current_user["user_type"]
+    
+    # Validate current password
+    if not verify_password(password_data.current_password, str(user.password)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect"
+        )
+    
+    # Validate new password and confirmation match
+    if password_data.new_password != password_data.confirm_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New passwords do not match"
+        )
+    
+    # Validate password length
+    if len(password_data.new_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 8 characters long"
+        )
+    
+    # Validate that new password is different from current password
+    if verify_password(password_data.new_password, str(user.password)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be different from current password"
+        )
+    
+    # Update password
+    hashed_password = get_password_hash(password_data.new_password)
+    user.password = hashed_password
+    db.commit()
+    
+    return {"message": "Password changed successfully"}

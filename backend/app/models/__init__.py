@@ -18,3 +18,22 @@ from .models import (
     parent_student_association,
     teacher_course_association,
 )
+
+from .notification_models import (
+    Notification,
+    NotificationPreference,
+    NotificationTemplate,
+    NotificationLog,
+    NotificationType,
+    NotificationPriority,
+    NotificationChannel,
+)
+
+from .email_models import (
+    PasswordResetToken,
+    EmailLog,
+    MonthlyReport,
+    EmailPreference,
+    EmailTemplate,
+    EmailStatusEnum,
+)

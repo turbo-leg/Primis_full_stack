@@ -8,16 +8,20 @@ from app.core.security import verify_token
 import os
 
 # Import models to ensure they are registered with SQLAlchemy
-from app.models import models
+from app.models import models, notification_models
 
 # Initialize settings (imported from config)
 
-# Create upload directories
-os.makedirs(settings.upload_dir, exist_ok=True)
-os.makedirs(settings.qr_code_dir, exist_ok=True)
+# Create upload directories (only if not using Cloudinary)
+if not settings.use_cloudinary:
+    os.makedirs(settings.upload_dir, exist_ok=True)
+    os.makedirs(settings.qr_code_dir, exist_ok=True)
 
-# Create database tables
-Base.metadata.create_all(bind=engine)
+# Note: Database tables are now managed by Alembic migrations
+# Run: alembic upgrade head
+# To auto-create tables in development only (remove in production):
+if os.getenv("ENVIRONMENT") == "development":
+    Base.metadata.create_all(bind=engine)
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -31,9 +35,9 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for development
+    allow_origins=settings.allowed_origins,  # Use configured origins instead of wildcard
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],  # Explicitly allow methods
     allow_headers=["*"],
     expose_headers=["*"],
 )
@@ -66,9 +70,10 @@ async def health_check():
 
 
 # Import and include routers
-from app.api import auth, courses, attendance, admin, students, teachers, parents, materials
+from app.api import auth, courses, attendance, admin, students, teachers, parents, materials, notifications, email_routes
 
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["authentication"])
+app.include_router(email_routes.router, prefix="/api/v1/auth", tags=["email"])
 app.include_router(courses.router, prefix="/api/v1/courses", tags=["courses"])
 app.include_router(attendance.router, prefix="/api/v1/attendance", tags=["attendance"])
 app.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])
@@ -76,6 +81,8 @@ app.include_router(students.router, prefix="/api/v1/students", tags=["students"]
 app.include_router(teachers.router, prefix="/api/v1/teachers", tags=["teachers"])
 app.include_router(parents.router, prefix="/api/v1/parents", tags=["parents"])
 app.include_router(materials.router, prefix="/api/v1", tags=["materials"])
+app.include_router(notifications.router, prefix="/api/v1", tags=["notifications"])
 
-# Serve uploaded files
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+# Serve uploaded files (only if not using Cloudinary)
+if not settings.use_cloudinary:
+    app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")

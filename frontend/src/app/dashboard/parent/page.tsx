@@ -1,594 +1,631 @@
-'use client'
+'use client';
 
-import React, { useEffect, useState } from 'react'
-import { useAuthStore } from '@/store/auth'
-import { apiClient } from '@/lib/api'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import MonthlyAttendanceReport from '@/components/MonthlyAttendanceReport'
-import AuthenticatedLayout from '@/components/AuthenticatedLayout'
+import { useState, useEffect } from 'react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { 
-  Users, 
-  Calendar, 
+  AlertCircle, 
+  User, 
+  BookOpen, 
   CheckCircle, 
-  TrendingUp,
-  BookOpen,
-  Clock,
-  AlertCircle,
-  FileText,
-  DollarSign,
+  AlertTriangle,
   MessageSquare,
-  Phone,
-  Mail
-} from 'lucide-react'
+  Calendar,
+  Download,
+  Eye,
+  BarChart3,
+  TrendingUp,
+  Clock
+} from 'lucide-react';
 
-interface Student {
-  student_id: number
-  name: string
-  email: string
-  phone?: string
-  date_of_birth?: string
-  address?: string
-  qr_code?: string
+interface Child {
+  student_id: number;
+  name: string;
+  email: string;
+  phone?: string;
+  date_of_birth?: string;
+  address?: string;
+  qr_code?: string;
 }
 
 interface Course {
-  course_id: number
-  title: string
-  description: string
-  start_time: string
-  end_time: string
-  is_online: boolean
-  location: string
-  status: string
-  teacher_name?: string
-}
-
-interface Enrollment {
-  enrollment_id: number
-  course: Course
-  paid: boolean
-  payment_due: string
-  status: string
-  amount?: number
-}
-
-interface AttendanceRecord {
-  attendance_id: number
-  course_id: number
-  attendance_date: string
-  status: 'present' | 'absent' | 'late' | 'excused'
-  course_title: string
+  course_id: number;
+  title: string;
+  description: string;
+  teacher_name: string;
+  grade?: number;
+  attendance_percentage?: number;
+  total_assignments?: number;
+  completed_assignments?: number;
 }
 
 interface Assignment {
-  assignment_id: number
-  course_id: number
-  title: string
-  description: string
-  due_date: string
-  max_points: number
-  course_title: string
-  submission_status?: 'submitted' | 'pending' | 'overdue'
-  grade?: number
+  assignment_id: number;
+  title: string;
+  course_title: string;
+  due_date: string;
+  status: 'submitted' | 'pending' | 'overdue' | 'graded';
+  grade?: number;
+  max_points?: number;
+  feedback?: string;
+  submitted_at?: string;
+}
+
+interface Attendance {
+  date: string;
+  status: 'present' | 'absent' | 'late';
+  course_title: string;
+}
+
+interface Message {
+  message_id: number;
+  from_name: string;
+  subject: string;
+  preview: string;
+  date: string;
+  is_read: boolean;
+}
+
+interface PerformanceData {
+  month: string;
+  average_grade: number;
+  attendance_rate: number;
 }
 
 export default function ParentDashboard() {
-  const { user, userType } = useAuthStore()
-  const [children, setChildren] = useState<Student[]>([])
-  const [selectedChild, setSelectedChild] = useState<Student | null>(null)
-  const [enrollments, setEnrollments] = useState<Enrollment[]>([])
-  const [attendance, setAttendance] = useState<AttendanceRecord[]>([])
-  const [assignments, setAssignments] = useState<Assignment[]>([])
-  const [attendanceStats, setAttendanceStats] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'overview' | 'attendance'>('overview')
+  const [children, setChildren] = useState<Child[]>([]);
+  const [selectedChild, setSelectedChild] = useState<Child | null>(null);
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [attendance, setAttendance] = useState<Attendance[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [performanceData, setPerformanceData] = useState<PerformanceData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  // Type guard to check if user is a parent
-  const isParent = (user: any): user is { parent_id: number; name: string; email: string } => {
-    return user && userType === 'parent' && 'parent_id' in user
-  }
+  const authToken = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
 
   useEffect(() => {
-    if (isParent(user)) {
-      fetchDashboardData()
-    }
-  }, [user, userType])
+    fetchChildren();
+  }, []);
 
   useEffect(() => {
     if (selectedChild) {
-      fetchChildData(selectedChild.student_id)
+      fetchChildData();
     }
-  }, [selectedChild])
+  }, [selectedChild]);
 
-  const fetchDashboardData = async () => {
-    if (!isParent(user)) return
+  const fetchChildren = async () => {
+    try {
+      const parentId = localStorage.getItem('user_id');
+      const response = await fetch(`http://localhost:8000/api/parents/${parentId}/children`, {
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) throw new Error('Failed to fetch children');
+      const data = await response.json();
+      setChildren(data);
+      if (data.length > 0) {
+        setSelectedChild(data[0]);
+      }
+    } catch (err) {
+      setError('Failed to load children data');
+      console.error(err);
+    }
+  };
+
+  const fetchChildData = async () => {
+    if (!selectedChild) return;
     
+    setLoading(true);
     try {
-      setLoading(true)
-      
-      // Fetch parent's children
-      try {
-        const childrenData = await apiClient.get(`/api/v1/parents/${user.parent_id}/children`)
-        setChildren(childrenData)
-        if (childrenData.length > 0) {
-          setSelectedChild(childrenData[0])
-        }
-      } catch (error) {
-        console.log('Children endpoint not available, using mock data')
-        // Mock children data for development
-        const mockChildren: Student[] = [
-          {
-            student_id: 1,
-            name: "Alex Johnson",
-            email: "alex.johnson@email.com",
-            phone: "555-0123",
-            date_of_birth: "2008-03-15",
-            address: "123 Main St, City, State"
-          }
-        ]
-        setChildren(mockChildren)
-        setSelectedChild(mockChildren[0])
-      }
-
-    } catch (error) {
-      console.error('Error fetching parent dashboard data:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const fetchChildData = async (studentId: number) => {
-    try {
-      // Fetch child's enrollments
-      try {
-        const enrollmentsData = await apiClient.get(`/api/v1/students/${studentId}/enrollments`)
-        setEnrollments(enrollmentsData)
-      } catch (error) {
-        console.log('Student enrollments endpoint not available')
-        setEnrollments([])
-      }
-
-      // Fetch child's attendance
-      try {
-        const attendanceData = await apiClient.getStudentAttendance(studentId)
-        setAttendance(attendanceData.slice(0, 10)) // Last 10 records
-        
-        const statsData = await apiClient.getAttendanceStats(studentId)
-        setAttendanceStats(statsData)
-      } catch (error) {
-        console.log('Student attendance endpoint not available')
-        setAttendance([])
-        setAttendanceStats(null)
-      }
-
-      // Fetch child's assignments
-      try {
-        const assignmentsData = await apiClient.get(`/api/v1/students/assignments/upcoming?student_id=${studentId}`)
-        setAssignments(assignmentsData)
-      } catch (error) {
-        console.log('Student assignments endpoint not available, using mock data')
-        // Mock assignments for development
-        setAssignments([
-          {
-            assignment_id: 1,
-            course_id: 1,
-            title: "Math Homework Chapter 5",
-            description: "Complete exercises 1-20",
-            due_date: "2025-10-05T23:59:00",
-            max_points: 100,
-            course_title: "Advanced Mathematics",
-            submission_status: "submitted",
-            grade: 85
+      // Fetch courses
+      const coursesRes = await fetch(
+        `http://localhost:8000/api/students/${selectedChild.student_id}/courses`,
+        {
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
           },
-          {
-            assignment_id: 2,
-            course_id: 2,
-            title: "Physics Lab Report",
-            description: "Submit lab report for experiment 3",
-            due_date: "2025-10-03T17:00:00",
-            max_points: 50,
-            course_title: "Physics Fundamentals",
-            submission_status: "pending"
-          }
-        ])
+        }
+      );
+      if (coursesRes.ok) {
+        setCourses(await coursesRes.json());
       }
 
-    } catch (error) {
-      console.error('Error fetching child data:', error)
+      // Fetch assignments
+      const assignmentsRes = await fetch(
+        `http://localhost:8000/api/students/${selectedChild.student_id}/assignments`,
+        {
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+      if (assignmentsRes.ok) {
+        setAssignments(await assignmentsRes.json());
+      }
+
+      // Fetch attendance
+      const attendanceRes = await fetch(
+        `http://localhost:8000/api/students/${selectedChild.student_id}/attendance`,
+        {
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+      if (attendanceRes.ok) {
+        setAttendance(await attendanceRes.json());
+      }
+
+      // Mock messages for now (would come from real API)
+      setMessages([
+        {
+          message_id: 1,
+          from_name: 'Ms. Smith',
+          subject: 'Your child is doing great!',
+          preview: 'I wanted to reach out to inform you that your child has been excelling...',
+          date: '2025-10-19',
+          is_read: true,
+        },
+        {
+          message_id: 2,
+          from_name: 'Mr. Johnson',
+          subject: 'Missing Assignment',
+          preview: 'I noticed that your child has not submitted the latest math assignment...',
+          date: '2025-10-18',
+          is_read: false,
+        },
+      ]);
+
+      // Mock performance data
+      setPerformanceData([
+        { month: 'August', average_grade: 78, attendance_rate: 92 },
+        { month: 'September', average_grade: 82, attendance_rate: 94 },
+        { month: 'October', average_grade: 85, attendance_rate: 96 },
+      ]);
+    } catch (err) {
+      console.error('Error fetching child data:', err);
+    } finally {
+      setLoading(false);
     }
-  }
+  };
 
-  const getStatusColor = (status: string) => {
-    switch (status.toLowerCase()) {
-      case 'present': return 'bg-green-100 text-green-800'
-      case 'absent': return 'bg-red-100 text-red-800'
-      case 'late': return 'bg-yellow-100 text-yellow-800'
-      case 'excused': return 'bg-blue-100 text-blue-800'
-      case 'submitted': return 'bg-green-100 text-green-800'
-      case 'pending': return 'bg-yellow-100 text-yellow-800'
-      case 'overdue': return 'bg-red-100 text-red-800'
-      case 'paid': return 'bg-green-100 text-green-800'
-      case 'unpaid': return 'bg-red-100 text-red-800'
-      default: return 'bg-gray-100 text-gray-800'
+  const getAssignmentStatusColor = (status: string) => {
+    switch (status) {
+      case 'graded':
+        return 'bg-green-100 text-green-800';
+      case 'submitted':
+        return 'bg-blue-100 text-blue-800';
+      case 'pending':
+        return 'bg-yellow-100 text-yellow-800';
+      case 'overdue':
+        return 'bg-red-100 text-red-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
     }
-  }
+  };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
-    })
-  }
+  const getAttendanceColor = (status: string) => {
+    switch (status) {
+      case 'present':
+        return 'text-green-600';
+      case 'absent':
+        return 'text-red-600';
+      case 'late':
+        return 'text-yellow-600';
+      default:
+        return 'text-gray-600';
+    }
+  };
 
-  const formatTime = (dateString: string) => {
-    return new Date(dateString).toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit'
-    })
-  }
+  const overallAttendance = attendance.length > 0 
+    ? Math.round((attendance.filter(a => a.status === 'present').length / attendance.length) * 100)
+    : 0;
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD'
-    }).format(amount)
-  }
+  const pendingAssignments = assignments.filter(a => a.status === 'pending' || a.status === 'overdue').length;
 
-  if (userType !== 'parent') {
+  const averageGrade = assignments.filter(a => a.grade).length > 0
+    ? Math.round(
+        assignments
+          .filter(a => a.grade)
+          .reduce((sum, a) => sum + ((a.grade || 0) / (a.max_points || 100)) * 100, 0) /
+        assignments.filter(a => a.grade).length
+      )
+    : 0;
+
+  if (error) {
     return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-red-600">Access Denied</h1>
-          <p className="text-gray-600 mt-2">This page is only accessible to parents.</p>
-        </div>
+      <div className="flex items-center justify-center h-screen">
+        <Card className="w-full max-w-md">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-2 text-red-600 mb-4">
+              <AlertCircle className="w-5 h-5" />
+              <p className="font-semibold">{error}</p>
+            </div>
+            <Button onClick={() => window.location.reload()}>Retry</Button>
+          </CardContent>
+        </Card>
       </div>
-    )
-  }
-
-  if (loading) {
-    return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
-        </div>
-      </div>
-    )
+    );
   }
 
   return (
-    <AuthenticatedLayout>
-      <div className="container mx-auto px-4 py-8">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
+      <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Parent Dashboard</h1>
-          <p className="text-gray-600 mt-2">Welcome back, {user?.name}! Monitor your child's progress.</p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Parent Dashboard</h1>
+          <p className="text-gray-600">Monitor your child's progress and stay connected</p>
         </div>
 
-      {/* Child Selector */}
-      {children.length > 1 && (
-        <Card className="mb-8">
-          <CardHeader>
-            <CardTitle>Select Child</CardTitle>
-            <CardDescription>Choose which child's information to view</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-2">
-              {children.map((child) => (
-                <Button
-                  key={child.student_id}
-                  variant={selectedChild?.student_id === child.student_id ? "default" : "outline"}
-                  onClick={() => setSelectedChild(child)}
-                >
-                  {child.name}
-                </Button>
-              ))}
+        {/* Child Selector */}
+        <div className="mb-6 flex gap-3 overflow-x-auto pb-2">
+          {children.map((child) => (
+            <Button
+              key={child.student_id}
+              onClick={() => setSelectedChild(child)}
+              variant={selectedChild?.student_id === child.student_id ? 'default' : 'outline'}
+              className="whitespace-nowrap"
+            >
+              <User className="w-4 h-4 mr-2" />
+              {child.name}
+            </Button>
+          ))}
+        </div>
+
+        {selectedChild && (
+          <>
+            {/* Overview Stats */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium text-gray-600 flex items-center gap-2">
+                    <BarChart3 className="w-4 h-4" />
+                    Average Grade
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-blue-600">{averageGrade}%</div>
+                  <p className="text-xs text-gray-500 mt-1">Based on graded assignments</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium text-gray-600 flex items-center gap-2">
+                    <Calendar className="w-4 h-4" />
+                    Attendance
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-green-600">{overallAttendance}%</div>
+                  <p className="text-xs text-gray-500 mt-1">This month</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium text-gray-600 flex items-center gap-2">
+                    <BookOpen className="w-4 h-4" />
+                    Courses
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-purple-600">{courses.length}</div>
+                  <p className="text-xs text-gray-500 mt-1">Enrolled courses</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium text-gray-600 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4" />
+                    Pending
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-orange-600">{pendingAssignments}</div>
+                  <p className="text-xs text-gray-500 mt-1">Assignments to submit</p>
+                </CardContent>
+              </Card>
             </div>
-          </CardContent>
-        </Card>
-      )}
 
-      {/* Navigation Tabs */}
-      {selectedChild && (
-        <div className="mb-6 border-b border-gray-200">
-          <nav className="-mb-px flex space-x-8">
-            <button
-              onClick={() => setActiveTab('overview')}
-              className={`${
-                activeTab === 'overview'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
-              } whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium transition-colors`}
-            >
-              Overview
-            </button>
-            <button
-              onClick={() => setActiveTab('attendance')}
-              className={`${
-                activeTab === 'attendance'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
-              } whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium transition-colors`}
-            >
-              Monthly Attendance Report
-            </button>
-          </nav>
-        </div>
-      )}
+            {/* Main Content Tabs */}
+            <Tabs defaultValue="overview" className="w-full">
+              <TabsList className="grid w-full grid-cols-5 mb-4">
+                <TabsTrigger value="overview">Overview</TabsTrigger>
+                <TabsTrigger value="courses">Courses</TabsTrigger>
+                <TabsTrigger value="assignments">Assignments</TabsTrigger>
+                <TabsTrigger value="attendance">Attendance</TabsTrigger>
+                <TabsTrigger value="messages">Messages</TabsTrigger>
+              </TabsList>
 
-      {selectedChild && activeTab === 'attendance' ? (
-        <MonthlyAttendanceReport studentId={selectedChild.student_id} />
-      ) : selectedChild ? (
-        <>
-          {/* Student Info */}
-          <Card className="mb-8">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5" />
-                {selectedChild.name}'s Information
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="flex items-center gap-3">
-                  <Mail className="h-5 w-5 text-gray-500" />
-                  <div>
-                    <p className="text-sm text-gray-600">Email</p>
-                    <p className="font-medium">{selectedChild.email}</p>
-                  </div>
-                </div>
-                {selectedChild.phone && (
-                  <div className="flex items-center gap-3">
-                    <Phone className="h-5 w-5 text-gray-500" />
-                    <div>
-                      <p className="text-sm text-gray-600">Phone</p>
-                      <p className="font-medium">{selectedChild.phone}</p>
-                    </div>
-                  </div>
-                )}
-                {selectedChild.date_of_birth && (
-                  <div className="flex items-center gap-3">
-                    <Calendar className="h-5 w-5 text-gray-500" />
-                    <div>
-                      <p className="text-sm text-gray-600">Date of Birth</p>
-                      <p className="font-medium">{formatDate(selectedChild.date_of_birth)}</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Stats Overview */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Enrolled Courses</CardTitle>
-                <BookOpen className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{enrollments.length}</div>
-                <p className="text-xs text-muted-foreground">
-                  Active enrollments
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Attendance Rate</CardTitle>
-                <TrendingUp className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {attendanceStats ? `${attendanceStats.attendance_percentage?.toFixed(1)}%` : 'N/A'}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Overall attendance
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Pending Assignments</CardTitle>
-                <FileText className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {assignments.filter(a => a.submission_status === 'pending').length}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Due this week
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Unpaid Fees</CardTitle>
-                <DollarSign className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {enrollments.filter(e => !e.paid).length}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Outstanding payments
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Course Enrollments */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <BookOpen className="h-5 w-5" />
-                  Course Enrollments
-                </CardTitle>
-                <CardDescription>Current course enrollments and payment status</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {enrollments.length > 0 ? (
-                    enrollments.map((enrollment) => (
-                      <div key={enrollment.enrollment_id} className="p-4 border rounded-lg">
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <h4 className="font-semibold">{enrollment.course.title}</h4>
-                            <p className="text-sm text-gray-600">{enrollment.course.description}</p>
-                            <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-                              <span className="flex items-center gap-1">
-                                <Clock className="h-3 w-3" />
-                                {formatTime(enrollment.course.start_time)} - {formatTime(enrollment.course.end_time)}
-                              </span>
-                              {enrollment.course.teacher_name && (
-                                <span>Teacher: {enrollment.course.teacher_name}</span>
-                              )}
+              {/* Overview Tab */}
+              <TabsContent value="overview">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  {/* Performance Chart */}
+                  <Card className="lg:col-span-2">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <TrendingUp className="w-5 h-5" />
+                        Performance Trend
+                      </CardTitle>
+                      <CardDescription>Grade and attendance over time</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-4">
+                        {performanceData.map((data, idx) => (
+                          <div key={idx} className="space-y-2">
+                            <div className="flex justify-between text-sm">
+                              <span className="font-medium">{data.month}</span>
+                              <div className="flex gap-4">
+                                <span className="text-blue-600">Grade: {data.average_grade}%</span>
+                                <span className="text-green-600">Attendance: {data.attendance_rate}%</span>
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <div className="flex-1 bg-gray-200 rounded-full h-2">
+                                <div
+                                  className="bg-blue-500 h-2 rounded-full"
+                                  style={{ width: `${data.average_grade}%` }}
+                                ></div>
+                              </div>
+                              <div className="flex-1 bg-gray-200 rounded-full h-2">
+                                <div
+                                  className="bg-green-500 h-2 rounded-full"
+                                  style={{ width: `${data.attendance_rate}%` }}
+                                ></div>
+                              </div>
                             </div>
                           </div>
-                          <div className="flex flex-col items-end gap-2">
-                            <Badge className={getStatusColor(enrollment.paid ? 'paid' : 'unpaid')}>
-                              {enrollment.paid ? 'Paid' : 'Unpaid'}
-                            </Badge>
-                            {!enrollment.paid && enrollment.payment_due && (
-                              <p className="text-xs text-red-600">
-                                Due: {formatDate(enrollment.payment_due)}
-                              </p>
-                            )}
-                            {enrollment.amount && (
-                              <p className="text-sm font-medium">
-                                {formatCurrency(enrollment.amount)}
-                              </p>
-                            )}
-                          </div>
-                        </div>
+                        ))}
                       </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Quick Stats */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg">Quick Stats</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="space-y-2">
+                        <p className="text-sm text-gray-600">Current GPA</p>
+                        <p className="text-3xl font-bold text-blue-600">{(averageGrade / 20).toFixed(1)}</p>
+                      </div>
+                      <div className="space-y-2">
+                        <p className="text-sm text-gray-600">Assignments Completed</p>
+                        <p className="text-3xl font-bold text-green-600">
+                          {assignments.filter(a => a.status === 'graded').length}/{assignments.length}
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        <p className="text-sm text-gray-600">Attendance Days</p>
+                        <p className="text-3xl font-bold text-purple-600">
+                          {attendance.filter(a => a.status === 'present').length}/{attendance.length}
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              </TabsContent>
+
+              {/* Courses Tab */}
+              <TabsContent value="courses">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {loading ? (
+                    <Card className="md:col-span-3">
+                      <CardContent className="pt-6">
+                        <p className="text-gray-500">Loading courses...</p>
+                      </CardContent>
+                    </Card>
+                  ) : courses.length > 0 ? (
+                    courses.map((course) => (
+                      <Card key={course.course_id} className="hover:shadow-lg transition-shadow">
+                        <CardHeader className="pb-3">
+                          <CardTitle className="text-lg">{course.title}</CardTitle>
+                          <CardDescription className="flex items-center gap-1">
+                            <User className="w-4 h-4" />
+                            {course.teacher_name}
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                          <p className="text-sm text-gray-600">{course.description}</p>
+                          <div className="space-y-2">
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-600">Overall Grade</span>
+                              <span className="font-semibold text-blue-600">{course.grade}%</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-600">Attendance</span>
+                              <span className="font-semibold text-green-600">{course.attendance_percentage}%</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-600">Assignments</span>
+                              <span className="font-semibold">
+                                {course.completed_assignments}/{course.total_assignments}
+                              </span>
+                            </div>
+                          </div>
+                          <Button variant="outline" size="sm" className="w-full">
+                            <Eye className="w-4 h-4 mr-2" />
+                            View Details
+                          </Button>
+                        </CardContent>
+                      </Card>
                     ))
                   ) : (
-                    <p className="text-gray-500 text-center py-8">No course enrollments.</p>
+                    <Card className="md:col-span-3">
+                      <CardContent className="pt-6">
+                        <p className="text-gray-500">No courses found</p>
+                      </CardContent>
+                    </Card>
                   )}
                 </div>
-              </CardContent>
-            </Card>
+              </TabsContent>
 
-            {/* Recent Attendance */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <CheckCircle className="h-5 w-5" />
-                  Recent Attendance
-                </CardTitle>
-                <CardDescription>Latest attendance records</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {attendance.length > 0 ? (
-                    attendance.map((record) => (
-                      <div key={record.attendance_id} className="flex items-center justify-between p-3 border rounded-lg">
-                        <div>
-                          <p className="font-medium">{record.course_title}</p>
-                          <p className="text-sm text-gray-600">{formatDate(record.attendance_date)}</p>
-                        </div>
-                        <Badge className={getStatusColor(record.status)}>
-                          {record.status}
-                        </Badge>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-gray-500 text-center py-8">No attendance records yet.</p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+              {/* Assignments Tab */}
+              <TabsContent value="assignments">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <BookOpen className="w-5 h-5" />
+                      Assignment Status
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      {assignments.length > 0 ? (
+                        assignments.map((assignment) => (
+                          <div
+                            key={assignment.assignment_id}
+                            className="border rounded-lg p-4 hover:bg-gray-50 transition-colors"
+                          >
+                            <div className="flex justify-between items-start mb-2">
+                              <div className="flex-1">
+                                <h4 className="font-semibold text-gray-900">{assignment.title}</h4>
+                                <p className="text-sm text-gray-600">{assignment.course_title}</p>
+                              </div>
+                              <Badge className={getAssignmentStatusColor(assignment.status)}>
+                                {assignment.status.charAt(0).toUpperCase() + assignment.status.slice(1)}
+                              </Badge>
+                            </div>
 
-            {/* Assignments */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <FileText className="h-5 w-5" />
-                  Assignments
-                </CardTitle>
-                <CardDescription>Assignment status and grades</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {assignments.length > 0 ? (
-                    assignments.map((assignment) => (
-                      <div key={assignment.assignment_id} className="p-3 border rounded-lg">
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <h4 className="font-medium">{assignment.title}</h4>
-                            <p className="text-sm text-gray-600">{assignment.course_title}</p>
-                            <p className="text-xs text-gray-500 mt-1">{assignment.description}</p>
-                          </div>
-                          <div className="text-right">
-                            <Badge className={getStatusColor(assignment.submission_status || 'pending')}>
-                              {assignment.submission_status || 'pending'}
-                            </Badge>
-                            <p className="text-sm font-medium mt-1">
-                              Due: {formatDate(assignment.due_date)}
-                            </p>
-                            {assignment.grade !== undefined && (
-                              <p className="text-sm font-medium text-green-600">
-                                Grade: {assignment.grade}/{assignment.max_points}
-                              </p>
+                            <div className="grid grid-cols-3 gap-4 text-sm mb-2">
+                              <div className="flex items-center gap-1 text-gray-600">
+                                <Clock className="w-4 h-4" />
+                                Due: {new Date(assignment.due_date).toLocaleDateString()}
+                              </div>
+                              {assignment.status === 'graded' && assignment.grade !== undefined && (
+                                <div className="text-blue-600 font-semibold">
+                                  Grade: {assignment.grade}/{assignment.max_points}
+                                </div>
+                              )}
+                              {assignment.submitted_at && (
+                                <div className="text-gray-600">
+                                  Submitted: {new Date(assignment.submitted_at).toLocaleDateString()}
+                                </div>
+                              )}
+                            </div>
+
+                            {assignment.feedback && (
+                              <div className="bg-blue-50 border-l-4 border-blue-500 p-3 rounded mt-2">
+                                <p className="text-sm">
+                                  <span className="font-semibold">Feedback:</span> {assignment.feedback}
+                                </p>
+                              </div>
                             )}
                           </div>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-gray-500 text-center py-8">No assignments yet.</p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+                        ))
+                      ) : (
+                        <p className="text-gray-500">No assignments found</p>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
 
-            {/* Communication */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <MessageSquare className="h-5 w-5" />
-                  Communication
-                </CardTitle>
-                <CardDescription>Contact teachers and school administration</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <Button className="w-full" variant="outline">
-                    <MessageSquare className="h-4 w-4 mr-2" />
-                    Message Teachers
-                  </Button>
-                  <Button className="w-full" variant="outline">
-                    <Phone className="h-4 w-4 mr-2" />
-                    Schedule Meeting
-                  </Button>
-                  <Button className="w-full" variant="outline">
-                    <FileText className="h-4 w-4 mr-2" />
-                    View Progress Reports
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </>
-      ) : (
-        <Card>
-          <CardContent className="text-center py-12">
-            <AlertCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No Children Found</h3>
-            <p className="text-gray-600">
-              No children are associated with your parent account. Please contact the school administration.
-            </p>
-          </CardContent>
-        </Card>
-      )}
+              {/* Attendance Tab */}
+              <TabsContent value="attendance">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Calendar className="w-5 h-5" />
+                      Attendance Record
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {attendance.length > 0 ? (
+                        attendance.slice(-20).reverse().map((record, idx) => (
+                          <div
+                            key={idx}
+                            className="flex justify-between items-center p-3 border rounded hover:bg-gray-50"
+                          >
+                            <div className="flex-1">
+                              <p className="font-medium">{record.course_title}</p>
+                              <p className="text-sm text-gray-600">
+                                {new Date(record.date).toLocaleDateString('en-US', {
+                                  weekday: 'long',
+                                  year: 'numeric',
+                                  month: 'long',
+                                  day: 'numeric',
+                                })}
+                              </p>
+                            </div>
+                            <div className={`font-semibold ${getAttendanceColor(record.status)}`}>
+                              {record.status.charAt(0).toUpperCase() + record.status.slice(1)}
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-gray-500">No attendance records found</p>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              {/* Messages Tab */}
+              <TabsContent value="messages">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <MessageSquare className="w-5 h-5" />
+                      Messages from Teachers
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      {messages.length > 0 ? (
+                        messages.map((message) => (
+                          <div
+                            key={message.message_id}
+                            className={`border rounded-lg p-4 hover:bg-gray-50 transition-colors cursor-pointer ${
+                              !message.is_read ? 'bg-blue-50 border-blue-300' : ''
+                            }`}
+                          >
+                            <div className="flex justify-between items-start mb-2">
+                              <div className="flex-1">
+                                <h4 className="font-semibold text-gray-900 flex items-center gap-2">
+                                  {message.from_name}
+                                  {!message.is_read && (
+                                    <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
+                                  )}
+                                </h4>
+                                <p className="text-sm text-gray-500">
+                                  {new Date(message.date).toLocaleDateString()}
+                                </p>
+                              </div>
+                            </div>
+                            <p className="font-medium text-gray-900 mb-2">{message.subject}</p>
+                            <p className="text-sm text-gray-600">{message.preview}</p>
+                            <Button variant="ghost" size="sm" className="mt-2">
+                              <MessageSquare className="w-4 h-4 mr-2" />
+                              Reply
+                            </Button>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-gray-500">No messages</p>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
+          </>
+        )}
+      </div>
     </div>
-    </AuthenticatedLayout>
-  )
+  );
 }

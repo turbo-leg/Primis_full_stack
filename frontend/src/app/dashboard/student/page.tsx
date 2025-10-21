@@ -501,11 +501,12 @@ export default function StudentDashboard() {
               
               <div className="bg-white p-4 rounded-lg border-2 border-gray-200 inline-block">
                 <img 
-                  src={`http://localhost:8000${qrCodeUrl}`}
+                  src={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}${qrCodeUrl}`}
                   alt="Student QR Code" 
-                  className="w-64 h-64 cursor-pointer hover:scale-105 transition-transform"
-                  onClick={() => {
-                    // Already enlarged, could add download functionality here
+                  className="w-64 h-64 object-contain cursor-pointer hover:scale-105 transition-transform"
+                  onError={(e) => {
+                    console.error('Failed to load QR code image');
+                    e.currentTarget.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="%23f3f4f6"/><text x="50%" y="50%" text-anchor="middle" fill="%236b7280" font-size="16">QR Code Not Available</text></svg>';
                   }}
                 />
               </div>

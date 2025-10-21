@@ -50,6 +50,12 @@ module.exports = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        // Primis Brand Colors
+        primis: {
+          navy: '#0F2847',
+          'navy-light': '#1a3a5f',
+          'navy-dark': '#0a1d33',
+        },
       },
       borderRadius: {
         lg: "var(--radius)",

@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Form, File, UploadFile
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, and_
 from typing import List, Optional
 from datetime import datetime, timedelta
+from pydantic import BaseModel
 
 from app.core.database import get_db
 from app.api.auth import get_current_user, require_role
@@ -10,6 +11,32 @@ from app.models.models import (
     Student, Teacher, Course, Enrollment, Assignment, 
     AssignmentSubmission, Material, Announcement
 )
+from app.utils.cloudinary_helper import upload_file
+
+
+# Pydantic models
+class SubmitAssignmentRequest(BaseModel):
+    assignment_id: int
+    submission_text: Optional[str] = None
+    
+    class Config:
+        from_attributes = True
+
+
+class SubmissionResponse(BaseModel):
+    submission_id: int
+    assignment_id: int
+    student_id: int
+    submission_text: Optional[str]
+    file_url: Optional[str]
+    submitted_at: str
+    grade: Optional[float]
+    feedback: Optional[str]
+    graded_at: Optional[str]
+    assignment_title: str
+    
+    class Config:
+        from_attributes = True
 
 router = APIRouter()
 
@@ -238,4 +265,190 @@ async def get_recent_materials(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching recent materials: {str(e)}"
+        )
+
+
+@router.post("/assignments/{assignment_id}/submit")
+async def submit_assignment(
+    assignment_id: int,
+    submission_text: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+    current_user=Depends(require_role(["student"])),
+    db: Session = Depends(get_db)
+):
+    """Submit an assignment with optional text and file attachment"""
+    try:
+        student_id = int(current_user.get("sub"))
+        
+        # Get the assignment
+        assignment = db.query(Assignment).filter(
+            Assignment.assignment_id == assignment_id
+        ).first()
+        
+        if not assignment:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Assignment not found"
+            )
+        
+        # Verify student is enrolled in the course
+        enrollment = db.query(Enrollment).filter(
+            and_(
+                Enrollment.student_id == student_id,
+                Enrollment.course_id == assignment.course_id
+            )
+        ).first()
+        
+        if not enrollment:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You are not enrolled in this course"
+            )
+        
+        # Check if already submitted
+        existing_submission = db.query(AssignmentSubmission).filter(
+            and_(
+                AssignmentSubmission.assignment_id == assignment_id,
+                AssignmentSubmission.student_id == student_id
+            )
+        ).first()
+        
+        if existing_submission:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="You have already submitted this assignment. Please contact your teacher to resubmit."
+            )
+        
+        # Validate that at least one submission method is used
+        if not submission_text and not file:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Please provide either submission text or a file"
+            )
+        
+        # Upload file if provided
+        file_url = None
+        if file:
+            try:
+                # Read file content
+                content = await file.read()
+                
+                # Upload to Cloudinary
+                result = upload_file(
+                    file_content=content,
+                    folder="assignment_submissions",
+                    resource_type="auto"
+                )
+                file_url = result.get("secure_url")
+            except Exception as e:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Error uploading file: {str(e)}"
+                )
+        
+        # Create submission record
+        submission = AssignmentSubmission(
+            assignment_id=assignment_id,
+            student_id=student_id,
+            submission_text=submission_text,
+            file_url=file_url,
+            submitted_at=datetime.now()
+        )
+        
+        db.add(submission)
+        db.commit()
+        db.refresh(submission)
+        
+        # Send notification to teacher about new submission
+        try:
+            from app.services.notification_service import NotificationService
+            from app.models.notification_models import NotificationType, NotificationPriority
+            from app.models.models import Course
+            
+            # Get the course and teacher
+            course = db.query(Course).filter(Course.course_id == assignment.course_id).first()  # type: ignore
+            if course and course.admin_id:  # type: ignore
+                notification_service = NotificationService(db)
+                
+                # Get student name
+                student = db.query(Student).filter(Student.student_id == student_id).first()
+                student_name = f"{student.first_name} {student.last_name}" if student else "A student"  # type: ignore
+                
+                notification_service.create_notification(
+                    user_id=course.admin_id,  # type: ignore
+                    user_type="teacher",
+                    notification_type=NotificationType.ASSIGNMENT_CREATED,  # Using this for submission notification
+                    title=f"New Submission: {assignment.title}",  # type: ignore
+                    message=f"{student_name} submitted {assignment.title} in {course.title}",  # type: ignore
+                    priority=NotificationPriority.MEDIUM,
+                    action_url=f"/dashboard/teacher/assignments/{assignment_id}/submissions",
+                    action_text="View Submissions",
+                    related_assignment_id=assignment_id,
+                    related_course_id=assignment.course_id  # type: ignore
+                )
+        except Exception as e:
+            print(f"Failed to send submission notification: {e}")
+            # Don't fail the submission if notification fails
+        
+        return {
+            "message": "Assignment submitted successfully",
+            "submission_id": submission.submission_id,  # type: ignore
+            "submitted_at": submission.submitted_at.isoformat()  # type: ignore
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error submitting assignment: {str(e)}"
+        )
+
+
+@router.get("/assignments/{assignment_id}/submission")
+async def get_assignment_submission(
+    assignment_id: int,
+    current_user=Depends(require_role(["student"])),
+    db: Session = Depends(get_db)
+):
+    """Get student's submission for a specific assignment"""
+    try:
+        student_id = int(current_user.get("sub"))
+        
+        # Get the submission
+        submission = db.query(AssignmentSubmission).join(
+            Assignment, AssignmentSubmission.assignment_id == Assignment.assignment_id
+        ).filter(
+            and_(
+                AssignmentSubmission.assignment_id == assignment_id,
+                AssignmentSubmission.student_id == student_id
+            )
+        ).first()
+        
+        if not submission:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No submission found for this assignment"
+            )
+        
+        return {
+            "submission_id": submission.submission_id,  # type: ignore
+            "assignment_id": submission.assignment_id,  # type: ignore
+            "student_id": submission.student_id,  # type: ignore
+            "submission_text": submission.submission_text,  # type: ignore
+            "file_url": submission.file_url,  # type: ignore
+            "submitted_at": submission.submitted_at.isoformat(),  # type: ignore
+            "grade": submission.grade,  # type: ignore
+            "feedback": submission.feedback,  # type: ignore
+            "graded_at": submission.graded_at.isoformat() if submission.graded_at else None,  # type: ignore
+            "assignment_title": submission.assignment.title  # type: ignore
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching submission: {str(e)}"
         )

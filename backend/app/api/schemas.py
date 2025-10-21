@@ -110,3 +110,9 @@ class TokenData(BaseModel):
     user_id: Optional[int] = None
     user_type: Optional[str] = None
     email: Optional[str] = None
+
+
+class ChangePassword(BaseModel):
+    current_password: str
+    new_password: str
+    confirm_password: str

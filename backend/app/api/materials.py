@@ -5,6 +5,8 @@ from datetime import datetime
 from app.core.database import get_db
 from app.api.auth import get_current_user, require_role
 from app.models.models import Material, Course, Teacher, Announcement
+from app.core.config import settings
+from app.utils.cloudinary_helper import upload_file, delete_file
 from pydantic import BaseModel
 import os
 import uuid
@@ -84,19 +86,9 @@ async def upload_material(
                 detail="You are not assigned to this course"
             )
     
-    # Create uploads directory if it doesn't exist
-    upload_dir = "uploads/materials"
-    os.makedirs(upload_dir, exist_ok=True)
-    
-    # Generate unique filename
+    # Read file content
+    content = await file.read()
     file_extension = os.path.splitext(file.filename)[1]
-    unique_filename = f"{uuid.uuid4()}{file_extension}"
-    file_path = os.path.join(upload_dir, unique_filename)
-    
-    # Save file
-    with open(file_path, "wb") as buffer:
-        content = await file.read()
-        buffer.write(content)
     
     # Determine file type
     file_type = "document"
@@ -111,12 +103,45 @@ async def upload_material(
     elif file_extension.lower() in [".zip", ".rar"]:
         file_type = "archive"
     
+    # Upload to Cloudinary or local storage
+    if settings.use_cloudinary:
+        # Upload to Cloudinary
+        unique_filename = f"{uuid.uuid4()}{file_extension}"
+        
+        # Determine resource type for Cloudinary
+        resource_type = "auto"
+        if file_type == "video":
+            resource_type = "video"
+        elif file_type in ["pdf", "document", "presentation", "archive"]:
+            resource_type = "raw"
+        
+        result = upload_file(
+            file_content=content,
+            folder="course_materials",
+            public_id=unique_filename.replace(file_extension, ''),
+            resource_type=resource_type
+        )
+        
+        file_url = result['secure_url']
+    else:
+        # Save to local filesystem (fallback for development)
+        upload_dir = "uploads/materials"
+        os.makedirs(upload_dir, exist_ok=True)
+        
+        unique_filename = f"{uuid.uuid4()}{file_extension}"
+        file_path = os.path.join(upload_dir, unique_filename)
+        
+        with open(file_path, "wb") as buffer:
+            buffer.write(content)
+        
+        file_url = f"/uploads/materials/{unique_filename}"
+    
     # Create material record
     material = Material(
         course_id=course_id,
         title=title,
         type=file_type,
-        url=f"/uploads/materials/{unique_filename}",
+        url=file_url,
         file_size=len(content),
         description=description,
         is_public=is_public
@@ -125,6 +150,35 @@ async def upload_material(
     db.add(material)
     db.commit()
     db.refresh(material)
+    
+    # Send notification to all enrolled students about new material
+    try:
+        from app.services.notification_service import NotificationService
+        from app.models.notification_models import NotificationType, NotificationPriority
+        from app.models.models import Enrollment
+        
+        # Get all active enrollments for this course
+        enrollments = db.query(Enrollment).filter(
+            Enrollment.course_id == course_id,
+            Enrollment.status == "active"
+        ).all()
+        
+        notification_service = NotificationService(db)
+        for enrollment in enrollments:
+            notification_service.create_notification(
+                user_id=enrollment.student_id,  # type: ignore
+                user_type="student",
+                notification_type=NotificationType.COURSE_UPDATE,
+                title=f"New Material: {title}",
+                message=f"New {file_type} material has been uploaded to {course.title}",
+                priority=NotificationPriority.MEDIUM,
+                action_url=f"/dashboard/student/courses/{course_id}/materials",
+                action_text="View Materials",
+                related_course_id=course_id
+            )
+    except Exception as e:
+        print(f"Failed to send material upload notification: {e}")
+        # Don't fail the upload if notification fails
     
     return material
 
@@ -200,6 +254,9 @@ async def create_announcement(
     current_user=Depends(require_role(["teacher", "admin"]))
 ):
     """Create an announcement for a course (teachers and admins only)"""
+    from app.services.notification_service import NotificationService
+    from app.models.notification_models import NotificationType, NotificationPriority
+    from app.models.models import Enrollment
     
     # Verify course exists
     course = db.query(Course).filter(Course.course_id == course_id).first()
@@ -220,8 +277,10 @@ async def create_announcement(
                 detail="You are not assigned to this course"
             )
         posted_by_id = user.teacher_id
+        poster_name = user.name
     else:  # admin
         posted_by_id = user.admin_id
+        poster_name = user.name
     
     # Create announcement
     new_announcement = Announcement(
@@ -236,6 +295,33 @@ async def create_announcement(
     db.add(new_announcement)
     db.commit()
     db.refresh(new_announcement)
+    
+    # Send notifications to all enrolled students
+    notification_service = NotificationService(db)
+    enrollments = db.query(Enrollment).filter(
+        Enrollment.course_id == course_id,
+        Enrollment.status == "active"
+    ).all()
+    
+    priority = NotificationPriority.HIGH if announcement.is_important else NotificationPriority.MEDIUM
+    
+    for enrollment in enrollments:
+        try:
+            notification_service.create_notification(
+                user_id=enrollment.student_id,
+                user_type="student",
+                notification_type=NotificationType.ANNOUNCEMENT,
+                title=f"New Announcement: {announcement.title}",
+                message=f"{poster_name} posted in {course.title}: {announcement.content[:100]}{'...' if len(announcement.content) > 100 else ''}",
+                priority=priority,
+                action_url=f"/courses/{course_id}",
+                action_text="View Course",
+                related_course_id=course_id,
+                expires_in_days=30
+            )
+        except Exception as e:
+            # Log error but don't fail the announcement creation
+            print(f"Failed to send notification to student {enrollment.student_id}: {e}")
     
     return new_announcement
 
