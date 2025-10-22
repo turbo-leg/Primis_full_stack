@@ -47,7 +47,7 @@ def create_test_users():
                 email="teacher@gmail.com",
                 password=password_hash,
                 phone="1234567890",
-                subject="Mathematics"
+                specialization="Mathematics"
             )
             db.add(teacher)
             print("✓ Created teacher: teacher@gmail.com")
@@ -62,7 +62,8 @@ def create_test_users():
                 email="student@gmail.com",
                 password=password_hash,
                 phone="0987654321",
-                grade="10"
+                parent_email="parent@gmail.com",
+                parent_phone="5555555555"
             )
             db.add(student)
             print("✓ Created student: student@gmail.com")
@@ -75,7 +76,6 @@ def create_test_users():
             parent = Parent(
                 name="Parent User",
                 email="parent@gmail.com",
-                password=password_hash,
                 phone="5555555555"
             )
             db.add(parent)
