@@ -47,7 +47,9 @@ export default function LoginPage() {
       const redirectPath = getDashboardPath(userType)
       router.push(redirectPath)
     } catch (error: any) {
-      toast.error(error.message || 'Login failed. Please try again.')
+      console.error('Login error:', error)
+      const errorMessage = error?.response?.data?.detail || error?.message || 'Login failed. Please check your email and password.'
+      toast.error(errorMessage)
     } finally {
       setIsLoading(false)
     }

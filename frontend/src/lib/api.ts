@@ -35,6 +35,17 @@ class ApiClient {
           localStorage.removeItem('user_data')
           window.location.href = '/login'
         }
+        
+        // Log detailed error information for debugging
+        console.error('API Error:', {
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          data: error.response?.data,
+          message: error.message,
+          url: error.config?.url,
+          method: error.config?.method,
+        })
+        
         // Pass through the full error object for better error handling in components
         return Promise.reject(error)
       }

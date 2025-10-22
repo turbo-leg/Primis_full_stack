@@ -33,13 +33,30 @@ export const useAuthStore = create<AuthState>()(
           // Store token in localStorage
           localStorage.setItem('access_token', authData.access_token)
           
-          // Get user details
-          const userData = await apiClient.getCurrentUser()
-          
           const userType = authData.user_type as UserType
           
+          // Try to get user details, but don't fail if it doesn't work
+          let userData = null
+          try {
+            userData = await apiClient.getCurrentUser()
+          } catch (userError) {
+            console.warn('Could not fetch user details, using data from login response:', userError)
+            // Fall back to using data from login response
+            userData = {
+              user: {
+                id: authData.user_id,
+                name: authData.name,
+                email: authData.email,
+              }
+            }
+          }
+          
           set({
-            user: userData.user,
+            user: userData?.user || {
+              id: authData.user_id,
+              name: authData.name,
+              email: authData.email,
+            },
             userType,
             token: authData.access_token,
             isAuthenticated: true,
@@ -48,9 +65,12 @@ export const useAuthStore = create<AuthState>()(
 
           // Return user type for redirection
           return userType
-        } catch (error) {
+        } catch (error: any) {
           set({ isLoading: false })
-          throw error
+          // Provide better error message
+          const errorMessage = error?.response?.data?.detail || error?.message || 'Login failed. Please check your credentials.'
+          const loginError = new Error(errorMessage)
+          throw loginError
         }
       },
 
