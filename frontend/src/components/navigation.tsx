@@ -15,8 +15,6 @@ import {
   Home, 
   BookOpen, 
   Users, 
-  Calendar, 
-  BarChart3,
   Settings,
   LogOut,
   Bell,
@@ -83,7 +81,6 @@ export function Navigation({ className }: NavigationProps) {
     const baseItems = [
       { href: '/dashboard', label: 'Dashboard', icon: Home },
       { href: '/courses', label: 'Courses', icon: BookOpen },
-      { href: '/calendar', label: 'Calendar', icon: Calendar },
     ]
 
     const settingsItem = { href: '/dashboard/settings', label: 'Settings', icon: Settings }
@@ -92,26 +89,16 @@ export function Navigation({ className }: NavigationProps) {
       case 'student':
         return [
           ...baseItems,
-          { href: '/assignments', label: 'Assignments', icon: BookOpen },
-          { href: '/attendance', label: 'Attendance', icon: BarChart3 },
-          { href: '/grades', label: 'Grades', icon: BarChart3 },
           settingsItem,
         ]
       case 'teacher':
         return [
           ...baseItems,
-          { href: '/students', label: 'Students', icon: Users },
-          { href: '/attendance/mark', label: 'Mark Attendance', icon: BarChart3 },
-          { href: '/assignments/grade', label: 'Grade Assignments', icon: BookOpen },
-          { href: '/analytics', label: 'Analytics', icon: BarChart3 },
           settingsItem,
         ]
       case 'admin':
         return [
           ...baseItems,
-          { href: '/users', label: 'User Management', icon: Users },
-          { href: '/analytics', label: 'Analytics', icon: BarChart3 },
-          { href: '/reports', label: 'Reports', icon: BarChart3 },
           settingsItem,
         ]
       case 'parent':
