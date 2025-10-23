@@ -29,6 +29,10 @@ services:
       - REDIS_URL=redis://redis:6379
       - SECRET_KEY=dev-secret-key-change-in-production
       - ENVIRONMENT=development
+      - USE_CLOUDINARY=true
+      - CLOUDINARY_CLOUD_NAME=db9973jrc
+      - CLOUDINARY_API_KEY=761352199315859
+      - CLOUDINARY_API_SECRET=V31lQwGil7vkqWkSCwUz5p8tqA4
     depends_on:
       postgres:
         condition: service_healthy
