@@ -17,8 +17,8 @@ from app.services.email_service import email_service
 # from app.services.celery_app import send_password_reset_email_task  # Not needed - sending directly
 from app.core.config import settings
 
-router = APIRouter(prefix="/api/v1/auth", tags=["authentication"])
-admin_router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
+router = APIRouter(tags=["authentication"])  # No prefix here - added in main.py
+admin_router = APIRouter(tags=["admin"])  # No prefix here - added in main.py
 
 
 # ==================== Schemas ====================
