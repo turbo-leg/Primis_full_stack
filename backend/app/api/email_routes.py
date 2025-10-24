@@ -14,7 +14,7 @@ from app.core.security import get_current_user, get_password_hash, verify_passwo
 from app.models import Student, Teacher, Admin, Parent, PasswordResetToken, EmailLog, EmailPreference
 from app.api.schemas import Message
 from app.services.email_service import email_service
-from app.services.celery_app import send_password_reset_email_task
+# from app.services.celery_app import send_password_reset_email_task  # Not needed - sending directly
 from app.core.config import settings
 
 router = APIRouter(prefix="/api/v1/auth", tags=["authentication"])
@@ -156,14 +156,19 @@ async def forgot_password(
     db.add(reset_token)
     db.commit()
     
-    # Send email asynchronously via Celery
+    # Send email directly (no Celery needed for simple emails)
     reset_url = f"{settings.password_reset_url}?token={plain_token}"
-    send_password_reset_email_task.delay(
-        email=email,
-        name=user_name,
-        reset_token=plain_token,
-        reset_url=reset_url
-    )
+    
+    try:
+        await email_service.send_password_reset_email(
+            email=email,
+            name=user_name,
+            reset_token=plain_token,
+            reset_url=reset_url
+        )
+    except Exception as e:
+        # Log error but don't reveal to user for security
+        print(f"Error sending password reset email: {e}")
     
     return {"message": "If an account exists with this email, you will receive a password reset link shortly."}
 
