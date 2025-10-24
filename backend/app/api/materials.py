@@ -10,6 +10,10 @@ from app.utils.cloudinary_helper import upload_file, delete_file
 from pydantic import BaseModel
 import os
 import uuid
+import logging
+
+# Configure logger
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -90,6 +94,15 @@ async def upload_material(
     content = await file.read()
     file_extension = os.path.splitext(file.filename)[1]
     
+    # Get user info for logging
+    user_id = current_user["user"].admin_id if user_type == "admin" else current_user["user"].teacher_id
+    user_name = current_user["user"].name
+    
+    # Log upload attempt
+    logger.info(f"File upload initiated - User: {user_name} (ID: {user_id}, Type: {user_type}), "
+                f"Course: {course.title} (ID: {course_id}), "
+                f"File: {file.filename}, Size: {len(content)} bytes")
+    
     # Determine file type
     file_type = "document"
     if file_extension.lower() in [".pdf"]:
@@ -105,6 +118,8 @@ async def upload_material(
     
     # Upload to Cloudinary or local storage
     if settings.use_cloudinary:
+        logger.info(f"📤 Using CLOUDINARY for upload - File: {file.filename}")
+        
         # Upload to Cloudinary
         unique_filename = f"{uuid.uuid4()}{file_extension}"
         
@@ -115,15 +130,32 @@ async def upload_material(
         elif file_type in ["pdf", "document", "presentation", "archive"]:
             resource_type = "raw"
         
-        result = upload_file(
-            file_content=content,
-            folder="course_materials",
-            public_id=unique_filename.replace(file_extension, ''),
-            resource_type=resource_type
-        )
-        
-        file_url = result['secure_url']
+        try:
+            result = upload_file(
+                file_content=content,
+                folder="course_materials",
+                public_id=unique_filename.replace(file_extension, ''),
+                resource_type=resource_type
+            )
+            
+            file_url = result['secure_url']
+            
+            logger.info(f"✅ CLOUDINARY upload successful - "
+                       f"File: {file.filename}, "
+                       f"URL: {file_url}, "
+                       f"Public ID: {result.get('public_id')}, "
+                       f"Size: {result.get('bytes')} bytes, "
+                       f"Format: {result.get('format')}")
+            
+        except Exception as e:
+            logger.error(f"❌ CLOUDINARY upload failed - File: {file.filename}, Error: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to upload file to cloud storage: {str(e)}"
+            )
     else:
+        logger.info(f"💾 Using LOCAL STORAGE for upload - File: {file.filename}")
+        
         # Save to local filesystem (fallback for development)
         upload_dir = "uploads/materials"
         os.makedirs(upload_dir, exist_ok=True)
@@ -131,10 +163,23 @@ async def upload_material(
         unique_filename = f"{uuid.uuid4()}{file_extension}"
         file_path = os.path.join(upload_dir, unique_filename)
         
-        with open(file_path, "wb") as buffer:
-            buffer.write(content)
-        
-        file_url = f"/uploads/materials/{unique_filename}"
+        try:
+            with open(file_path, "wb") as buffer:
+                buffer.write(content)
+            
+            file_url = f"/uploads/materials/{unique_filename}"
+            
+            logger.info(f"✅ LOCAL STORAGE upload successful - "
+                       f"File: {file.filename}, "
+                       f"Path: {file_path}, "
+                       f"Size: {len(content)} bytes")
+            
+        except Exception as e:
+            logger.error(f"❌ LOCAL STORAGE upload failed - File: {file.filename}, Error: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to save file locally: {str(e)}"
+            )
     
     # Create material record
     material = Material(
@@ -150,6 +195,16 @@ async def upload_material(
     db.add(material)
     db.commit()
     db.refresh(material)
+    
+    # Log successful material creation
+    storage_type = "CLOUDINARY" if settings.use_cloudinary else "LOCAL"
+    logger.info(f"✅ Material created successfully - "
+                f"ID: {material.material_id}, "
+                f"Title: {title}, "
+                f"Type: {file_type}, "
+                f"Storage: {storage_type}, "
+                f"Size: {len(content)} bytes, "
+                f"Course: {course.title}")
     
     # Send notification to all enrolled students about new material
     try:
