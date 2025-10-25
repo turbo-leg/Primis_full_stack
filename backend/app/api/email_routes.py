@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 import hashlib
+import logging
 
 from app.core.database import get_db
 from app.core.security import get_current_user, get_password_hash, verify_password
@@ -20,6 +21,7 @@ from app.core.config import settings
 router = APIRouter(tags=["authentication"])  # No prefix here - added in main.py
 admin_router = APIRouter(tags=["admin"])  # No prefix here - added in main.py
 
+logger = logging.getLogger(__name__)
 
 # ==================== Schemas ====================
 
@@ -160,15 +162,20 @@ async def forgot_password(
     reset_url = f"{settings.password_reset_url}?token={plain_token}"
     
     try:
-        await email_service.send_password_reset_email(
+        logger.info(f"📧 Attempting to send password reset email to {email}")
+        result = await email_service.send_password_reset_email(
             email=email,
             name=user_name,
             reset_token=plain_token,
             reset_url=reset_url
         )
+        if result:
+            logger.info(f"✅ Password reset email sent successfully to {email}")
+        else:
+            logger.error(f"❌ Password reset email FAILED to send to {email} - check email service configuration")
     except Exception as e:
         # Log error but don't reveal to user for security
-        print(f"Error sending password reset email: {e}")
+        logger.error(f"❌ Exception sending password reset email to {email}: {e}", exc_info=True)
     
     return {"message": "If an account exists with this email, you will receive a password reset link shortly."}
 
