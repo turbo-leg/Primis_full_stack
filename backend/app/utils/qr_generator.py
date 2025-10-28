@@ -11,49 +11,57 @@ def generate_qr_code(data: str, filename: str = None) -> str:
     Generate QR code for given data and save it to Cloudinary or local storage
     Returns the file path/URL of the generated QR code
     """
-    # Create QR code instance
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=10,
-        border=4,
-    )
-    
-    # Add data to QR code
-    qr.add_data(data)
-    qr.make(fit=True)
-    
-    # Create QR code image
-    img = qr.make_image(fill_color="black", back_color="white")
-    
-    # Generate filename if not provided
-    if filename is None:
-        filename = f"qr_{data.replace('_', '')}.png"
-    
-    # Upload to Cloudinary if enabled
-    if settings.use_cloudinary:
-        # Convert PIL Image to bytes
-        buffer = BytesIO()
-        img.save(buffer, format='PNG')
-        buffer.seek(0)
-        
-        # Upload to Cloudinary
-        result = upload_file(
-            file_content=buffer.getvalue(),
-            folder="qr_codes",
-            public_id=filename.replace('.png', ''),
-            resource_type="image"
+    try:
+        # Create QR code instance
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=10,
+            border=4,
         )
         
-        return result['secure_url']
-    else:
-        # Save to local filesystem (fallback for development)
-        os.makedirs(settings.qr_code_dir, exist_ok=True)
-        file_path = os.path.join(settings.qr_code_dir, filename)
-        img.save(file_path)
+        # Add data to QR code
+        qr.add_data(data)
+        qr.make(fit=True)
         
-        # Return relative path
-        return f"/{settings.qr_code_dir}/{filename}"
+        # Create QR code image
+        img = qr.make_image(fill_color="black", back_color="white")
+        
+        # Generate filename if not provided
+        if filename is None:
+            filename = f"qr_{data.replace('_', '')}.png"
+        
+        # Upload to Cloudinary if enabled
+        if settings.use_cloudinary:
+            print(f"[QR Generator] Uploading to Cloudinary: {filename}")
+            # Convert PIL Image to bytes
+            buffer = BytesIO()
+            img.save(buffer, format='PNG')
+            buffer.seek(0)
+            
+            # Upload to Cloudinary
+            result = upload_file(
+                file_content=buffer.getvalue(),
+                folder="qr_codes",
+                public_id=filename.replace('.png', ''),
+                resource_type="image"
+            )
+            
+            print(f"[QR Generator] Cloudinary upload successful: {result['secure_url']}")
+            return result['secure_url']
+        else:
+            print(f"[QR Generator] Saving locally: {filename}")
+            # Save to local filesystem (fallback for development)
+            os.makedirs(settings.qr_code_dir, exist_ok=True)
+            file_path = os.path.join(settings.qr_code_dir, filename)
+            img.save(file_path)
+            
+            # Return relative path
+            return f"/{settings.qr_code_dir}/{filename}"
+    except Exception as e:
+        print(f"[QR Generator] ERROR: Failed to generate QR code: {str(e)}")
+        # Return a fallback or re-raise
+        raise Exception(f"QR code generation failed: {str(e)}")
 
 
 def verify_qr_code(qr_data: str, expected_pattern: str = "student_") -> dict:
