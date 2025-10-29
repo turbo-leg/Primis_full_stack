@@ -52,11 +52,12 @@ async def health_check():
 
 
 # Import and include routers
-from app.api import auth, courses, attendance, admin, students, teachers, parents, materials, notifications, email_routes
+from app.api import auth, courses, attendance, admin, students, teachers, parents, materials, notifications, email_routes, online_courses
 
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["authentication"])
 app.include_router(email_routes.router, prefix="/api/v1/auth", tags=["email"])
 app.include_router(courses.router, prefix="/api/v1/courses", tags=["courses"])
+app.include_router(online_courses.router, prefix="/api/v1/online-courses", tags=["online-courses"])
 app.include_router(attendance.router, prefix="/api/v1/attendance", tags=["attendance"])
 app.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])
 app.include_router(students.router, prefix="/api/v1/students", tags=["students"])

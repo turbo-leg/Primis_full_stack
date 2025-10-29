@@ -128,6 +128,7 @@ class Course(Base):
     assignments = relationship("Assignment", back_populates="course")
     class_chat = relationship("ClassChat", back_populates="course", uselist=False)
     attendances = relationship("Attendance", back_populates="course")
+    online_course = relationship("OnlineCourse", back_populates="course", uselist=False)
 
 
 class Enrollment(Base):
@@ -307,3 +308,165 @@ class CalendarEvent(Base):
     # Relationships
     student = relationship("Student", back_populates="calendar_events")
     teacher = relationship("Teacher", back_populates="calendar_events")
+
+
+# Online Course System Models
+
+class OnlineCourse(Base):
+    __tablename__ = "online_courses"
+
+    online_course_id = Column(Integer, primary_key=True, index=True)
+    course_id = Column(Integer, ForeignKey("courses.course_id"), nullable=False)
+    
+    # Course structure
+    total_lessons = Column(Integer, default=0)
+    estimated_duration_hours = Column(Float, nullable=True)  # Total course duration
+    difficulty_level = Column(String(20), default="beginner")  # beginner, intermediate, advanced
+    prerequisites = Column(Text, nullable=True)  # JSON array of prerequisite courses
+    
+    # Content settings
+    allow_downloads = Column(Boolean, default=False)
+    watermark_text = Column(String(200), nullable=True)  # Custom watermark
+    copy_protection_enabled = Column(Boolean, default=True)
+    
+    # Access control
+    access_duration_days = Column(Integer, default=365)  # How long students have access
+    max_concurrent_sessions = Column(Integer, default=1)  # Prevent account sharing
+    
+    # Progress tracking
+    completion_certificate = Column(Boolean, default=True)
+    passing_score_percentage = Column(Integer, default=70)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Relationships
+    course = relationship("Course", back_populates="online_course")
+    lessons = relationship("OnlineLesson", back_populates="online_course", cascade="all, delete-orphan")
+    student_progress = relationship("StudentCourseProgress", back_populates="online_course", cascade="all, delete-orphan")
+
+
+class OnlineLesson(Base):
+    __tablename__ = "online_lessons"
+
+    lesson_id = Column(Integer, primary_key=True, index=True)
+    online_course_id = Column(Integer, ForeignKey("online_courses.online_course_id"), nullable=False)
+    
+    # Lesson details
+    title = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    lesson_order = Column(Integer, nullable=False)  # Order within the course
+    
+    # Content
+    video_url = Column(String(500), nullable=True)  # Google Drive or other cloud video URL
+    video_duration_minutes = Column(Integer, nullable=True)
+    content_type = Column(String(50), default="video")  # video, text, quiz, assignment
+    text_content = Column(Text, nullable=True)  # Rich text content
+    
+    # Access control
+    is_preview = Column(Boolean, default=False)  # Can be viewed without enrollment
+    requires_completion_of = Column(Integer, ForeignKey("online_lessons.lesson_id"), nullable=True)  # Prerequisite lesson
+    
+    # Engagement
+    quiz_questions = Column(Text, nullable=True)  # JSON array of quiz questions
+    assignment_description = Column(Text, nullable=True)
+    downloads = Column(Text, nullable=True)  # JSON array of downloadable resources
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Relationships
+    online_course = relationship("OnlineCourse", back_populates="lessons")
+    prerequisite_lesson = relationship("OnlineLesson", remote_side=[lesson_id])
+    lesson_progress = relationship("StudentLessonProgress", back_populates="lesson", cascade="all, delete-orphan")
+
+
+class StudentCourseProgress(Base):
+    __tablename__ = "student_course_progress"
+
+    progress_id = Column(Integer, primary_key=True, index=True)
+    student_id = Column(Integer, ForeignKey("students.student_id"), nullable=False)
+    online_course_id = Column(Integer, ForeignKey("online_courses.online_course_id"), nullable=False)
+    
+    # Progress tracking
+    lessons_completed = Column(Integer, default=0)
+    total_time_spent_minutes = Column(Integer, default=0)
+    completion_percentage = Column(Float, default=0.0)
+    current_lesson_id = Column(Integer, ForeignKey("online_lessons.lesson_id"), nullable=True)
+    
+    # Status
+    status = Column(String(20), default="in_progress")  # not_started, in_progress, completed, paused
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    last_accessed_at = Column(DateTime, nullable=True)
+    
+    # Achievements
+    certificate_issued = Column(Boolean, default=False)
+    final_score = Column(Float, nullable=True)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Relationships
+    student = relationship("Student")
+    online_course = relationship("OnlineCourse", back_populates="student_progress")
+    current_lesson = relationship("OnlineLesson")
+
+
+class StudentLessonProgress(Base):
+    __tablename__ = "student_lesson_progress"
+
+    lesson_progress_id = Column(Integer, primary_key=True, index=True)
+    student_id = Column(Integer, ForeignKey("students.student_id"), nullable=False)
+    lesson_id = Column(Integer, ForeignKey("online_lessons.lesson_id"), nullable=False)
+    
+    # Progress tracking
+    status = Column(String(20), default="not_started")  # not_started, in_progress, completed
+    time_spent_minutes = Column(Integer, default=0)
+    progress_percentage = Column(Float, default=0.0)  # Video watch percentage
+    
+    # Engagement tracking
+    play_count = Column(Integer, default=0)
+    last_position_seconds = Column(Integer, default=0)  # Resume position
+    
+    # Quiz/Assignment results
+    quiz_score = Column(Float, nullable=True)
+    quiz_attempts = Column(Integer, default=0)
+    assignment_submitted = Column(Boolean, default=False)
+    assignment_score = Column(Float, nullable=True)
+    
+    # Timestamps
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    last_accessed_at = Column(DateTime, nullable=True)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Relationships
+    student = relationship("Student")
+    lesson = relationship("OnlineLesson", back_populates="lesson_progress")
+
+
+class SessionTracking(Base):
+    __tablename__ = "session_tracking"
+
+    session_id = Column(Integer, primary_key=True, index=True)
+    student_id = Column(Integer, ForeignKey("students.student_id"), nullable=False)
+    lesson_id = Column(Integer, ForeignKey("online_lessons.lesson_id"), nullable=False)
+    
+    # Session details
+    session_token = Column(String(255), nullable=False, unique=True)
+    ip_address = Column(String(45), nullable=True)
+    user_agent = Column(Text, nullable=True)
+    device_fingerprint = Column(String(255), nullable=True)
+    
+    # Status
+    is_active = Column(Boolean, default=True)
+    started_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_heartbeat = Column(DateTime(timezone=True), server_default=func.now())
+    ended_at = Column(DateTime, nullable=True)
+
+    # Relationships
+    student = relationship("Student")
+    lesson = relationship("OnlineLesson")
