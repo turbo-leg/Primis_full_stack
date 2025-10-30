@@ -74,7 +74,7 @@ async def get_teacher_courses(
 ):
     """Get courses assigned to the current teacher"""
     try:
-        teacher_id = int(current_user.get("sub"))
+        teacher_id = current_user["user"].teacher_id
         
         courses = db.query(Course).filter(Course.admin_id == teacher_id).all()
         
@@ -115,7 +115,7 @@ async def get_teacher_students(
 ):
     """Get all students enrolled in the teacher's courses"""
     try:
-        teacher_id = int(current_user.get("sub"))
+        teacher_id = current_user["user"].teacher_id
         
         # Get all students from teacher's courses
         students = db.query(Student).join(
@@ -173,7 +173,7 @@ async def get_teacher_recent_attendance(
 ):
     """Get recent attendance records for teacher's courses"""
     try:
-        teacher_id = int(current_user.get("sub"))
+        teacher_id = current_user["user"].teacher_id
         
         attendance_records = db.query(Attendance).join(
             Course, Attendance.course_id == Course.course_id
@@ -210,7 +210,7 @@ async def get_teacher_assignments(
 ):
     """Get all assignments for teacher's courses"""
     try:
-        teacher_id = int(current_user.get("sub"))
+        teacher_id = current_user["user"].teacher_id
         
         assignments = db.query(Assignment).join(
             Course, Assignment.course_id == Course.course_id
@@ -252,7 +252,7 @@ async def create_assignment(
 ):
     """Create a new assignment for a course"""
     try:
-        teacher_id = int(current_user.get("sub"))
+        teacher_id = current_user["user"].teacher_id
         
         # Verify the course belongs to this teacher
         course = db.query(Course).filter(
@@ -327,7 +327,7 @@ async def get_assignment_submissions(
 ):
     """Get all submissions for a specific assignment"""
     try:
-        teacher_id = int(current_user.get("sub"))
+        teacher_id = current_user["user"].teacher_id
         
         # Verify the assignment belongs to this teacher's course
         assignment = db.query(Assignment).join(
@@ -390,7 +390,7 @@ async def grade_assignment_submission(
 ):
     """Grade a student's assignment submission"""
     try:
-        teacher_id = int(current_user.get("sub"))
+        teacher_id = current_user["user"].teacher_id
         
         # Verify the assignment belongs to this teacher
         assignment = db.query(Assignment).join(

@@ -7,11 +7,13 @@ from pydantic import BaseModel
 import json
 import uuid
 import hashlib
+import re
 
 from app.core.database import get_db
 from app.models.models import (
     OnlineCourse, OnlineLesson, StudentCourseProgress, 
-    StudentLessonProgress, SessionTracking, Course, Student, Enrollment
+    StudentLessonProgress, SessionTracking, Course, Student, Enrollment,
+    teacher_course_association
 )
 from app.api.auth import get_current_user, require_role
 
@@ -69,6 +71,20 @@ class OnlineCourseCreate(BaseModel):
     passing_score_percentage: int = 70
 
 
+class CourseBasicInfo(BaseModel):
+    course_id: int
+    title: str
+    description: Optional[str]
+    teacher_name: Optional[str] = None
+    department_name: Optional[str] = None
+    price: float
+    max_students: int
+    status: str
+    
+    class Config:
+        from_attributes = True
+
+
 class OnlineCourseResponse(BaseModel):
     online_course_id: int
     course_id: int
@@ -84,6 +100,7 @@ class OnlineCourseResponse(BaseModel):
     completion_certificate: bool
     passing_score_percentage: int
     created_at: datetime
+    course: Optional[CourseBasicInfo] = None
     
     class Config:
         from_attributes = True
@@ -130,6 +147,21 @@ class ProgressUpdateRequest(BaseModel):
 router = APIRouter()
 
 
+def convert_google_drive_url(url: str) -> str:
+    """Convert Google Drive sharing URL to embed URL for iframe compatibility"""
+    if not url or "drive.google.com" not in url:
+        return url
+    
+    # Extract file ID from Google Drive URL
+    file_id_match = re.search(r'/file/d/([a-zA-Z0-9_-]+)', url)
+    if file_id_match:
+        file_id = file_id_match.group(1)
+        # Use embed format which works best with iframes
+        return f"https://drive.google.com/file/d/{file_id}/preview"
+    
+    return url
+
+
 @router.get("/", response_model=List[OnlineCourseResponse])
 async def get_online_courses(
     db: Session = Depends(get_db),
@@ -140,15 +172,15 @@ async def get_online_courses(
     # For teachers, return only their courses  
     # For admins, return all courses
     
-    if current_user["role"] == "student":
+    if current_user["user_type"] == "student":
         # Return all online courses for students
-        online_courses = db.query(OnlineCourse).all()
-    elif current_user["role"] == "teacher":
+        online_courses = db.query(OnlineCourse).join(Course).all()
+    elif current_user["user_type"] == "teacher":
         # Return all online courses for now (teacher filtering will be added later)
-        online_courses = db.query(OnlineCourse).all()
+        online_courses = db.query(OnlineCourse).join(Course).all()
     else:  # admin
         # Return all online courses for admins
-        online_courses = db.query(OnlineCourse).all()
+        online_courses = db.query(OnlineCourse).join(Course).all()
     
     return online_courses
 
@@ -247,16 +279,20 @@ async def get_lessons(
     current_user=Depends(get_current_user)
 ):
     """Get all lessons for an online course"""
+    # Get the online course and its linked course_id
+    online_course = db.query(OnlineCourse).filter(
+        OnlineCourse.online_course_id == online_course_id
+    ).first()
+    
+    if not online_course:
+        raise HTTPException(status_code=404, detail="Online course not found")
+    
     # Check if user has access to this course
     if current_user["user_type"] == "student":
         enrollment = db.query(Enrollment).filter(
             and_(
                 Enrollment.student_id == current_user["user"].student_id,
-                Enrollment.course_id == db.query(OnlineCourse).filter(
-                    OnlineCourse.online_course_id == online_course_id
-                ).first().course_id if db.query(OnlineCourse).filter(
-                    OnlineCourse.online_course_id == online_course_id
-                ).first() else None
+                Enrollment.course_id == online_course.course_id
             )
         ).first()
         
@@ -287,10 +323,9 @@ async def create_video_session(
     session_request: VideoSessionRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_user=Depends(require_role(["student"]))
+    current_user=Depends(require_role(["student", "teacher"]))
 ):
     """Create a secure video viewing session with copy protection"""
-    student_id = current_user["user"].student_id
     lesson_id = session_request.lesson_id
     
     # Get lesson and course info
@@ -303,83 +338,65 @@ async def create_video_session(
     
     online_course = lesson.online_course
     
-    # Check enrollment and payment
-    enrollment = db.query(Enrollment).filter(
-        and_(
-            Enrollment.student_id == student_id,
-            Enrollment.course_id == online_course.course_id
-        )
-    ).first()
-    
-    if not enrollment or not enrollment.paid:
-        if not lesson.is_preview:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You must be enrolled and have paid to access this lesson"
+    # Check enrollment and payment (only for students)
+    if current_user["user_type"] == "student":
+        student_id = current_user["user"].student_id
+        enrollment = db.query(Enrollment).filter(
+            and_(
+                Enrollment.student_id == student_id,
+                Enrollment.course_id == online_course.course_id
             )
-    
-    # Check concurrent sessions limit
-    active_sessions = db.query(SessionTracking).filter(
-        and_(
-            SessionTracking.student_id == student_id,
-            SessionTracking.is_active == True,
-            SessionTracking.last_heartbeat > datetime.utcnow() - timedelta(minutes=5)
-        )
-    ).count()
-    
-    if active_sessions >= online_course.max_concurrent_sessions:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Maximum {online_course.max_concurrent_sessions} concurrent session(s) allowed"
-        )
+        ).first()
+        
+        if not enrollment or not enrollment.paid:
+            if not lesson.is_preview:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You must be enrolled and have paid to access this lesson"
+                )
+        
+        # Check concurrent sessions limit for students
+        active_sessions = db.query(SessionTracking).filter(
+            and_(
+                SessionTracking.student_id == student_id,
+                SessionTracking.is_active == True,
+                SessionTracking.last_heartbeat > datetime.utcnow() - timedelta(minutes=5)
+            )
+        ).count()
+        
+        if active_sessions >= online_course.max_concurrent_sessions:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Maximum {online_course.max_concurrent_sessions} concurrent session(s) allowed"
+            )
     
     # Create session token
     session_token = str(uuid.uuid4())
     
-    # Get client info
-    ip_address = request.client.host
-    user_agent = request.headers.get("user-agent", "")
+    # Convert Google Drive URL to direct streaming URL
+    streaming_url = convert_google_drive_url(str(lesson.video_url))
     
-    # Create session tracking
-    session = SessionTracking(
-        student_id=student_id,
-        lesson_id=lesson_id,
-        session_token=session_token,
-        ip_address=ip_address,
-        user_agent=user_agent,
-        device_fingerprint=session_request.device_fingerprint
-    )
-    
-    db.add(session)
-    db.commit()
-    
-    # Create progress entry if doesn't exist
-    progress = db.query(StudentLessonProgress).filter(
-        and_(
-            StudentLessonProgress.student_id == student_id,
-            StudentLessonProgress.lesson_id == lesson_id
-        )
-    ).first()
-    
-    if not progress:
-        progress = StudentLessonProgress(
+    # Create session tracking (only for students)
+    if current_user["user_type"] == "student":
+        ip_address = request.client.host if request.client else "unknown"
+        user_agent = request.headers.get("user-agent", "")
+        
+        session = SessionTracking(
             student_id=student_id,
             lesson_id=lesson_id,
-            status="in_progress",
-            started_at=datetime.utcnow()
+            session_token=session_token,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            device_fingerprint=session_request.device_fingerprint
         )
-        db.add(progress)
+        
+        db.add(session)
         db.commit()
-    
-    # Update last accessed
-    progress.last_accessed_at = datetime.utcnow()
-    progress.play_count += 1
-    db.commit()
     
     return VideoSessionResponse(
         session_token=session_token,
-        video_url=lesson.video_url,
-        watermark_text=online_course.watermark_text or f"Student: {current_user['user'].name}",
+        video_url=streaming_url,
+        watermark_text=online_course.watermark_text or f"User: {current_user['user'].name}",
         max_concurrent_sessions=online_course.max_concurrent_sessions
     )
 
@@ -514,9 +531,14 @@ async def get_student_progress(
 async def session_heartbeat(
     session_token: str,
     db: Session = Depends(get_db),
-    current_user=Depends(require_role(["student"]))
+    current_user=Depends(require_role(["student", "teacher"]))
 ):
     """Keep session alive with heartbeat"""
+    # Teachers don't have session tracking, so return success without doing anything
+    if current_user["user_type"] == "teacher":
+        return {"message": "Heartbeat acknowledged (teacher preview)"}
+    
+    # For students, find and update the session
     session = db.query(SessionTracking).filter(
         and_(
             SessionTracking.session_token == session_token,
@@ -542,9 +564,14 @@ async def session_heartbeat(
 async def end_session(
     session_token: str,
     db: Session = Depends(get_db),
-    current_user=Depends(require_role(["student"]))
+    current_user=Depends(require_role(["student", "teacher"]))
 ):
     """End a video viewing session"""
+    # Teachers don't have session tracking, so return success without doing anything
+    if current_user["user_type"] == "teacher":
+        return {"message": "Session ended (teacher preview)"}
+    
+    # For students, find and end the session
     session = db.query(SessionTracking).filter(
         and_(
             SessionTracking.session_token == session_token,
@@ -579,18 +606,31 @@ async def delete_online_course(
         )
     
     # Check if teacher owns the course (for teacher role)
-    if current_user["role"] == "teacher":
-        course = db.query(Course).filter(Course.course_id == online_course.course_id).first()
-        if not course or course.teacher_id != current_user["user"].teacher_id:
+    if current_user["user_type"] == "teacher":
+        # Check if teacher is associated with this course through teacher_course table
+        teacher_course_exists = db.query(teacher_course_association).filter(
+            and_(
+                teacher_course_association.c.teacher_id == current_user["user"].teacher_id,
+                teacher_course_association.c.course_id == online_course.course_id
+            )
+        ).first()
+        
+        if not teacher_course_exists:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You can only delete your own courses"
             )
     
-    # Delete related sessions
-    db.query(SessionTracking).filter(
-        SessionTracking.online_course_id == online_course_id
-    ).delete()
+    # Delete related sessions (sessions are linked to lessons, not courses directly)
+    lesson_ids = db.query(OnlineLesson.lesson_id).filter(
+        OnlineLesson.online_course_id == online_course_id
+    ).all()
+    
+    if lesson_ids:
+        lesson_id_list = [lesson_id[0] for lesson_id in lesson_ids]
+        db.query(SessionTracking).filter(
+            SessionTracking.lesson_id.in_(lesson_id_list)
+        ).delete(synchronize_session=False)
     
     # Delete student progress records
     db.query(StudentLessonProgress).filter(
@@ -636,9 +676,16 @@ async def archive_online_course(
         )
     
     # Check if teacher owns the course (for teacher role)
-    if current_user["role"] == "teacher":
-        course = db.query(Course).filter(Course.course_id == online_course.course_id).first()
-        if not course or course.teacher_id != current_user["user"].teacher_id:
+    if current_user["user_type"] == "teacher":
+        # Check if teacher is associated with this course through teacher_course table
+        teacher_course_exists = db.query(teacher_course_association).filter(
+            and_(
+                teacher_course_association.c.teacher_id == current_user["user"].teacher_id,
+                teacher_course_association.c.course_id == online_course.course_id
+            )
+        ).first()
+        
+        if not teacher_course_exists:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You can only archive your own courses"
@@ -673,17 +720,29 @@ async def delete_lesson(
         )
     
     # Check if teacher owns the course (for teacher role)
-    if current_user["role"] == "teacher":
+    if current_user["user_type"] == "teacher":
         online_course = db.query(OnlineCourse).filter(
             OnlineCourse.online_course_id == lesson.online_course_id
         ).first()
         if online_course:
-            course = db.query(Course).filter(Course.course_id == online_course.course_id).first()
-            if not course or course.teacher_id != current_user["user"].teacher_id:
+            # Check if teacher is associated with this course through teacher_course table
+            teacher_course_exists = db.query(teacher_course_association).filter(
+                and_(
+                    teacher_course_association.c.teacher_id == current_user["user"].teacher_id,
+                    teacher_course_association.c.course_id == online_course.course_id
+                )
+            ).first()
+            
+            if not teacher_course_exists:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="You can only delete lessons from your own courses"
                 )
+    
+    # Delete related session tracking records
+    db.query(SessionTracking).filter(
+        SessionTracking.lesson_id == lesson_id
+    ).delete()
     
     # Delete student progress for this lesson
     db.query(StudentLessonProgress).filter(

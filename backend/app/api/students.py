@@ -174,7 +174,7 @@ async def get_upcoming_assignments(
 ):
     """Get upcoming assignments for the current student"""
     try:
-        student_id = int(current_user.get("sub"))
+        student_id = current_user["user"].student_id
         
         # Get student's enrolled courses
         enrolled_course_ids = [e.course_id for e in db.query(Enrollment.course_id).filter(
@@ -230,7 +230,7 @@ async def get_recent_materials(
 ):
     """Get recent materials for the current student"""
     try:
-        student_id = int(current_user.get("sub"))
+        student_id = current_user["user"].student_id
         
         # Get student's enrolled courses
         enrolled_course_ids = [e.course_id for e in db.query(Enrollment.course_id).filter(
@@ -278,7 +278,7 @@ async def submit_assignment(
 ):
     """Submit an assignment with optional text and file attachment"""
     try:
-        student_id = int(current_user.get("sub"))
+        student_id = current_user["user"].student_id
         
         # Get the assignment
         assignment = db.query(Assignment).filter(
@@ -414,7 +414,7 @@ async def get_assignment_submission(
 ):
     """Get student's submission for a specific assignment"""
     try:
-        student_id = int(current_user.get("sub"))
+        student_id = current_user["user"].student_id
         
         # Get the submission
         submission = db.query(AssignmentSubmission).join(
